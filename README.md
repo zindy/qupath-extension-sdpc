@@ -25,8 +25,7 @@ and say which model and software version wrote the file.
 
 | Slide | Source | Scan | Result |
 |---|---|---|---|
-| `20220514_145829_0.sdpc` | sample slide shipped with [opensdpc](https://github.com/WonderLandxD/opensdpc) | 40x, 4 levels, 26880 x 21504 px at level 0 | Pixels compared against the Python reference reader |
-| <!-- add your own slides: scanner model, software version, magnification --> | | | |
+| [20220514_145829_0.sdpc](https://github.com/WonderLandxD/opensdpc/raw/refs/heads/main/data/20220514_145829_0.sdpc) | sample slide shipped with [opensdpc](https://github.com/WonderLandxD/opensdpc) | 40x, 4 levels, 26880 x 21504 px at level 0 | Pixels compared against the Python reference reader |
 
 Only HEVC-compressed slides (`sliceFormat == 4`) are supported. Other compression variants, if they exist, are rejected
 with an error message.
@@ -95,7 +94,7 @@ The jar is written to `build/libs/qupath-extension-sdpc-<version>-all.jar`.
 (e.g. `data/20220514_145829_0.sdpc` from opensdpc):
 
 ```bash
-set SDPC_TEST_FILE=path\to\20220514_145829_0.sdpc
+set SDPC_TEST_FILE=path/to/20220514_145829_0.sdpc
 gradlew test
 ```
 
@@ -108,8 +107,8 @@ The file format is not documented by the vendor. This extension would not exist 
 - **[opensdpc](https://github.com/WonderLandxD/opensdpc)** by Jiawen Li (H&G Pathology AI Research Team), a Python
   library for reading `.sdpc` slides, whose structure definitions and sample slide were the starting point for the
   file layout.
-- **The [image.sc forum](https://forum.image.sc)** discussion on reading `.sdpc` slides in QuPath, and the pure-Python
-  `sdpc_reader.py` / `sdpc2tiff.py` shared there, which showed that the tiles can be decoded with a standard HEVC
+- **The [image.sc forum](https://forum.image.sc/t/inquiry-about-support-for-reading-sdpc-format-slides-in-qupath/88317/9)** discussion on reading `.sdpc` slides in QuPath, and the pure-Python
+  `sdpc_reader.py` / `sdpc2tiff.py` shared there by Yaoting Sun, which showed that the tiles can be decoded with a standard HEVC
   decoder and gave reference pixel values to test against.
 - **[FFmpeg](https://ffmpeg.org)**, through the **[JavaCPP Presets](https://github.com/bytedeco/javacpp-presets)**
   by Samuel Audet and contributors, for HEVC decoding and colour conversion.
