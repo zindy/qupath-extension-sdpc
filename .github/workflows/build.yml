@@ -16,6 +16,7 @@ jobs:
     with:
       java-version: 25
       java-distribution: temurin
+      gradle-args: shadowJar
 
   create_release:
     name: Create GitHub Release
