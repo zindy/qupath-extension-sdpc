@@ -1,1 +1,13 @@
+# Default: automatically detect text files
 * text=auto
+
+# Windows batch scripts: CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Unix shell scripts: LF
+*.sh text eol=lf
+gradlew text eol=lf
+
+# Gradle wrapper batch script: explicitly CRLF
+gradlew.bat text eol=crlf

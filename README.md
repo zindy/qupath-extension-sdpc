@@ -1,224 +1,133 @@
-# QuPath extension template
+# QuPath SDPC extension
 
-This repo contains a template and instructions to help create a new extension for [QuPath](https://qupath.github.io).
+Adds support for opening `.sdpc` whole slide images in [QuPath](https://qupath.github.io) (v0.7.0+).
+`.sdpc` is the slide format of the digital pathology scanners and viewer software from
+Shenzhen Shengqiang Technology Co., Ltd. (SQRAY, sold under the TEKSQRAY name; [sqray.com](https://www.sqray.com)).
 
-It already contains two minimal extensions - one using Java, one using Groovy - so the first task is to make sure that they work.
-Then, it's a matter of customizing the code to make it more useful.
+Drag a `.sdpc` file onto QuPath, or add it to a project, like any other image. Nothing is converted or written to disk.
 
-> **Update!** 
-> For QuPath v0.6.0 this repo switched to use Kotlin DSL for Gradle build files - 
-> and also to use the [QuPath Gradle Plugin](https://github.com/qupath/qupath-gradle-plugin).
-> 
-> The outcome is that the build files are _much_ simpler.
+> This extension is an independent, community project. It is not affiliated with or endorsed by Shenzhen Shengqiang
+> Technology Co., Ltd. The file format is not publicly documented by the vendor; support is based on the work credited below.
 
+## What you get
 
-## Build the extension
+- The native pyramid levels of the slide, read on demand.
+- Pixel size and scan magnification from the file header.
+- The embedded label and macro images, as associated images.
+- No intermediate TIFF/SVS conversion step.
 
-Building the extension with Gradle should be pretty easy - you don't even need to install Gradle separately, because the 
-[Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html) will take care of that.
+## Scanners and slides
 
-Open a command prompt, navigate to where the code lives, and use
+The `.sdpc` format is produced by the vendor's scanners and software. This README deliberately does not list
+supported scanner models: I could not find an authoritative list of which models write `.sdpc`, and the extension
+has so far been tested on very few slides (below). If it works (or fails) on your scanner, please open an issue
+and say which model and software version wrote the file.
+
+| Slide | Source | Scan | Result |
+|---|---|---|---|
+| `20220514_145829_0.sdpc` | sample slide shipped with [opensdpc](https://github.com/WonderLandxD/opensdpc) | 40x, 4 levels, 26880 x 21504 px at level 0 | Pixels compared against the Python reference reader |
+| <!-- add your own slides: scanner model, software version, magnification --> | | | |
+
+Only HEVC-compressed slides (`sliceFormat == 4`) are supported. Other compression variants, if they exist, are rejected
+with an error message.
+
+## Installation
+
+1. Download `qupath-extension-sdpc-<version>-all.jar` from the releases page.
+2. Close QuPath, then copy the jar into QuPath's extensions folder (or drag it onto the QuPath window).
+3. Restart QuPath.
+
+The jar bundles the FFmpeg decoder libraries for Windows, Linux and macOS (Intel and Apple silicon).
+
+### Platform status
+
+| Platform | Status |
+|---|---|
+| Windows x64 | Tested. The extension loads its bundled FFmpeg libraries itself; no extra setup. |
+| Linux, macOS | Not tested. JavaCPP's own library loader is used, which fails on Java 16+ unless QuPath is started with `--add-opens=java.base/java.lang=ALL-UNNAMED` (see below). |
+
+Why the flag: JavaCPP loads native libraries on behalf of classes from other class loaders by reflecting into
+`java.lang.Runtime`, which recent Java versions block. On Windows the extension works around this by loading and
+registering the libraries itself (`FfmpegNatives`). That workaround has not been written for other platforms yet.
+
+To pass the flag, set the environment variable before starting QuPath:
+
+```bat
+set JAVA_TOOL_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED
+```
+
+or add a `java-options=--add-opens=java.base/java.lang=ALL-UNNAMED` line to the `[JavaOptions]` section of the
+QuPath launcher `.cfg` file, if your installation has one.
+
+## How it works
+
+An `.sdpc` file is a container holding a pyramid of independently compressed tiles, each a single HEVC (H.265) intra
+frame. The extension registers an `ImageServerBuilder` that:
+
+- parses the file header and the per-layer tile index (pure Java, `SdpcFile`),
+- decodes tiles on demand with FFmpeg's HEVC decoder via
+  [JavaCPP](https://github.com/bytedeco/javacpp-presets/tree/master/ffmpeg) (`HevcTileDecoder`),
+- exposes the native pyramid levels, pixel size, magnification, and the embedded label/macro images as associated
+  images.
+
+Layout, as reverse-engineered by the projects below: a fixed-size header, the embedded label/macro JPEGs, then for
+each pyramid layer an `IF` info block, a table of tile sizes, and the HEVC bitstreams, with each layer's info block
+pointing at the next.
+
+## Limitations
+
+- HEVC-compressed slides only.
+- Tested on Windows x64 and on a small number of slides.
+- Read-only. Annotations or other data stored by the vendor software, if any, are not read.
+- Decoding is done in software; very large slides may feel slower than with formats QuPath reads natively.
+
+## Build
+
 ```bash
-gradlew build
+gradlew shadowJar
 ```
 
-The built extension should be found inside `build/libs`.
-You can drag this onto QuPath to install it.
-You'll be prompted to create a user directory if you don't already have one.
+The jar is written to `build/libs/qupath-extension-sdpc-<version>-all.jar`.
 
-The minimal extension here doesn't do much, but it should at least install a new command under the 'Extensions' menu in 
-QuPath.
+## Tests
 
-> In case your extension contains external dependencies beyond what QuPath already includes, you can create a 
-> [single jar file](https://imperceptiblethoughts.com/shadow/introduction/#benefits-of-shadow) that bundles these along 
-> with your extension by using
-> ```bash
-> gradlew shadowJar
-> ```
-> If you don't do that, you'll need to drag *all* the extra dependences onto QuPath to install them as well.
+`SdpcImageServerTest` compares decoded pixels to values from the Python reader. It needs a sample slide
+(e.g. `data/20220514_145829_0.sdpc` from opensdpc):
 
-
-## Configure the extension
-
-Edit `build.gradle.kts` to specify the details of your extension
-
-```kotlin
-qupathExtension {
-  name = "qupath-extension-template"
-  group = "io.github.qupath"
-  version = releaseVersion
-  description = "A simple QuPath extension"
-  automaticModule = "io.github.qupath.extension.template"
-}
+```bash
+set SDPC_TEST_FILE=path\to\20220514_145829_0.sdpc
+gradlew test
 ```
 
-Edit `settings.gradle.kts` to specify which version of QuPath your extension should be compatible with, e.g.
+Without the variable the test is skipped. The sample slide is not part of this repository.
 
-```kotlin
-qupath {
-    version = "0.6.0"
-}
-```
+## Acknowledgements
 
-Unlike in the original template project, here the version is set in a separate [VERSION](VERSION) file rather than in `build.gradle.kts`.
+The file format is not documented by the vendor. This extension would not exist without:
 
-Additionally, a build and publish action is triggered *automatically* in Github if a git tag is pushed and it matches the VERSION (*sans* the `-SNAPSHOT` part). See the modified [build.yml](.github/workflows/build.yml).
-
-To trigger a build and publish action, issue the following commands from your local prompt:
-```
-git tag -a v0.1.0 -m "Release version 0.1.0"
-git push origin v0.1.0
-```
-
-Or from the extension's folder, this bash one-liner:
-```
-VERSION=$(cat VERSION | sed 's/-SNAPSHOT//'); git tag -a "v$VERSION" -m "Release version $VERSION"; git push origin "v$VERSION"
-```
-
-Once the new extension is published, you can increment the VERSION file and initiate an new round of development.
-
-
-
-
-## Run QuPath + the extension
-
-During development, your probably want to run QuPath easily with your extension installed for debugging.
-
-### 0. Make sure you have Java installed
-You'll need to install Java first.
-
-At the time of writing, we use a Java 25 JDK downloaded from https://adoptium.net/
-
-> Java 25 is a 'Long Term Support' release - which is why we use it instead of the very latest version.
-
-### 1. Get QuPath's source code
-You can find instructions at https://qupath.readthedocs.io/en/stable/docs/reference/building.html
-
-### 2. Create an `include-extra` file
-Create a file called `include-extra` in the root directory of the QuPath source code (*not* the extension code!).
-
-Set the contents of this file to:
-```
-[includeBuild]
-/path/to/your/extension
-
-[dependencies]
-extension-group:extension-name
-```
-replacing the default lines where needed.
-
-For example, to build the extension with the names given above you'd use
-```
-[includeBuild]
-../qupath-extension-template
-
-[dependencies]
-io.github.qupath:qupath-extension-template
-```
-
-### 3. Run QuPath
-Run QuPath from the command line using
-```
-gradlew run
-```
-If all goes well, QuPath should launch and you can check the *Extensions* mention to confirm the extension is installed.
-
-
-## Set up in an IDE (optional)
-
-During development, things are likely to be much easier if you work within an IDE.
-
-QuPath itself is developed using IntelliJ, and you can import the extension template there.
-
-The setup process is as above, and you'll need a a [Run configuration](https://www.jetbrains.com/help/idea/run-debug-configuration.html) 
-to call `gradlew run`.
-
-
-## Customize the extension
-
-Now you're ready for the creative part.
-
-You can develop the extension using either Java or Groovy - the template includes examples of both.
-
-### Create the extension Java or Groovy file(s)
-
-For the extension to work, you need to create at least one file that extends `qupath.lib.gui.extensions.QuPathExtension`.
-
-There are two examples in the template, in two languages:
-* **Java:** `qupath.ext.template.DemoExtension.java`.
-* **Groovy:** `qupath.ext.template.DemoGroovyExtension.java`.
-
-You can pick the one that corresponds to the language you want to use, and delete the other.
-
-Then take your chosen file and rename it, edit it, move it to another package... basically, make it your own.
-
-> Please **don't neglect this step!** 
-> If you do, there's a chance of multiple extensions being created with the same class names... and causing confusion later.
-
-### Update the `META-INF/services` file
-
-For QuPath to *find* the extension later, the full class name needs to be available in `resources/META-INFO/services/qupath.lib.gui.extensions.QuPathExtensions`.
-
-So remember to edit that file to include the class name that you actually used for your extension.
-
-### Specify your license
-
-Add a license file to your GitHub repo so that others know what they can and can't do with your extension.
-
-This should be compatible with QuPath's license -- see https://github.com/qupath/qupath
-
-## Repository configuration
-
-### Easy install
-
-If you follow some conventions in naming your extension and making releases, then other QuPath users will find it easy to automatically
-install and update your extension!
-
-First, we suggest you name your extension `qupath-extension-[something]`, and keep it in its own repository (named the same as the extension),
-separate from other projects.
-
-Next, when you want to publish a new version of your extension, use the `github_release.yml` workflow included in this repository.
-
-To do so, you'd need to navigate to `Actions -> Make draft release -> Run workflow -> Run workflow` as shown in the following screenshot:
-
-![Screenshot from 2024-03-14 18-44-42](https://github.com/alanocallaghan/qupath-extension-template/assets/10779688/4712a209-eda7-4f80-8bed-bbab20e4f50a)
-
-This will automatically build the extension, and create a draft release containing the extension jar (and its associated sources and javadoc).
-You can then navigate to `Releases` and fill out information about the release --- the version, any significant changes, etc.
-Once published, users will be able to automatically install the extension as described here:
-https://qupath.readthedocs.io/en/0.5/docs/intro/extensions.html#installing-extensions
-
-### Catalogs
-
-QuPath's extension manager can easily install an extension if it is referenced in a **catalog**.
-A catalog is a JSON file hosted on a GitHub repository containing information about extensions, making it possible to easily manage them from QuPath.
-
-To create a catalog, follow the [extension catalog model documentation](https://qupath.github.io/extension-catalog-model/).
-You will need to create a JSON file containing specific information about your extension and host it on a dedicated GitHub repository.
-Once the catalog is created, any user will be able to easily install your catalog by:
-
-* Opening QuPath's extension manager by clicking on `Extensions` -> `Manage extensions` in QuPath.
-* Adding the URL to your catalog by clicking on `Manage extension catalogs` -> `Add` in the extension manager.
-* Clicking on the `+` symbol next to your extension in the extension manager.
-
-QuPath will then make it easy to manage your extension and automatically inform users when an update is available.
-
-### Replace this readme
-
-Don't forget to replace the contents of this readme with your own!
-
-
-## Getting help
-
-For questions about QuPath and/or creating new extensions, please use the forum at https://forum.image.sc/tag/qupath
-
-------
+- **[opensdpc](https://github.com/WonderLandxD/opensdpc)** by Jiawen Li (H&G Pathology AI Research Team), a Python
+  library for reading `.sdpc` slides, whose structure definitions and sample slide were the starting point for the
+  file layout.
+- **The [image.sc forum](https://forum.image.sc)** discussion on reading `.sdpc` slides in QuPath, and the pure-Python
+  `sdpc_reader.py` / `sdpc2tiff.py` shared there, which showed that the tiles can be decoded with a standard HEVC
+  decoder and gave reference pixel values to test against.
+- **[FFmpeg](https://ffmpeg.org)**, through the **[JavaCPP Presets](https://github.com/bytedeco/javacpp-presets)**
+  by Samuel Audet and contributors, for HEVC decoding and colour conversion.
+- **[QuPath](https://qupath.github.io)** by Pete Bankhead and the QuPath developers, including the extension
+  template, and its JPen extension, whose approach to loading native libraries from an extension jar inspired
+  `FfmpegNatives`.
 
 ## License
 
-This is just a template, you're free to use it however you like.
-You can treat the contents of *this repository only* as being under [the Unlicense](https://unlicense.org) (except for the Gradle wrapper, which has its own license included).
+Copyright (c) the qupath-extension-sdpc authors. Licensed under the GNU General Public License v3.0; see `LICENSE`.
 
-If you use it to create a new QuPath extension, I'd strongly encourage you to select a suitable open-source license for the extension.
+The jar redistributes, unmodified, third-party components under their own licenses:
 
-Note that *QuPath itself* is available under the GPL, so you do have to abide by those terms: see https://github.com/qupath/qupath for more.
+| Component | License |
+|---|---|
+| FFmpeg (the non-GPL build from the JavaCPP Presets) | LGPL-2.1-or-later |
+| JavaCPP and JavaCPP Presets | Apache-2.0 (or GPL-2.0 with Classpath Exception) |
+
+FFmpeg source code is available from [ffmpeg.org](https://ffmpeg.org) and the
+[JavaCPP Presets](https://github.com/bytedeco/javacpp-presets) repository.
+"TEKSQRAY" and "SQRAY" are trademarks of their owner and are used here only to identify the file format's origin.

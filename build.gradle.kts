@@ -1,6 +1,4 @@
 plugins {
-    // Support writing the extension in Groovy (remove this if you don't want to)
-    groovy
     // To optionally create a shadow/fat jar that bundle up any non-core dependencies
     id("com.gradleup.shadow") version "8.3.5"
     // QuPath Gradle extension convention plugin
@@ -18,32 +16,41 @@ val releaseVersion = if (githubTag != null && githubTag.startsWith("v")) {
     file("VERSION").readText().trim() // Fallback to your SNAPSHOT file
 }
 
-// TODO: Configure your extension here (please change the defaults!)
 qupathExtension {
-    name = "qupath-extension-template"
+    name = "qupath-extension-sdpc"
     group = "io.github.qupath"
     version = releaseVersion
 
-    description = "A simple QuPath extension"
-    automaticModule = "io.github.qupath.extension.template"
+    description = "Adds support for opening TEKSQRAY (.sdpc) whole slide images in QuPath."
+    automaticModule = "io.github.qupath.extension.sdpc"
 }
 
-// TODO: Define your dependencies here
+// sdpc tiles are HEVC frames, decoded with the (LGPL) FFmpeg build from JavaCPP presets.
+// Must stay in line with the JavaCPP version used by QuPath's OpenCV.
+val ffmpegVersion = "7.1.1-1.5.12"
+
 dependencies {
 
     // Main dependencies for most QuPath extensions
     shadow(libs.bundles.qupath)
     shadow(libs.bundles.logging)
-    shadow(libs.qupath.fxtras)
 
-    // If you aren't using Groovy, this can be removed
-    shadow(libs.bundles.groovy)
+    // Java API, plus native libraries for every platform QuPath supports
+    implementation("org.bytedeco:ffmpeg:$ffmpegVersion")
+    for (platform in listOf("windows-x86_64", "linux-x86_64", "macosx-x86_64", "macosx-arm64"))
+        runtimeOnly("org.bytedeco:ffmpeg:$ffmpegVersion:$platform")
 
     // For testing
     testImplementation(libs.bundles.qupath)
     testImplementation(libs.junit)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
 }
 
-//the create-extension command code (gradlew createExtension -PextensionName=MyAwesome)
-apply(from = "create-extension.gradle.kts")
+// Only the decoder (avcodec), pixel conversion (swscale) and their dependencies are needed.
+tasks.shadowJar {
+    exclude("org/bytedeco/ffmpeg/*/*avformat*", "org/bytedeco/ffmpeg/*/*avdevice*",
+        "org/bytedeco/ffmpeg/*/*avfilter*", "org/bytedeco/ffmpeg/*/*postproc*",
+        "org/bytedeco/ffmpeg/*/ffmpeg*", "org/bytedeco/ffmpeg/*/ffprobe*")
+}
+
