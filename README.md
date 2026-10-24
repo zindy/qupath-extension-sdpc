@@ -9,6 +9,8 @@ Drag a `.sdpc` file onto QuPath, or add it to a project, like any other image. N
 > This extension is an independent, community project. It is not affiliated with or endorsed by Shenzhen Shengqiang
 > Technology Co., Ltd. The file format is not publicly documented by the vendor; support is based on the work credited below.
 
+<img width="1538" height="960" alt="image" src="https://github.com/user-attachments/assets/2c745309-5289-45a9-938c-f1553a249d03" />
+
 ## What you get
 
 - The native pyramid levels of the slide, read on demand.
@@ -43,7 +45,8 @@ The jar bundles the FFmpeg decoder libraries for Windows, Linux and macOS (Intel
 | Platform | Status |
 |---|---|
 | Windows x64 | Tested. The extension loads its bundled FFmpeg libraries itself; no extra setup. |
-| Linux, macOS | Not tested. JavaCPP's own library loader is used, which fails on Java 16+ unless QuPath is started with `--add-opens=java.base/java.lang=ALL-UNNAMED` (see below). |
+| Linux | Tested. But will not work without the export JAVA_TOOL_OPTIONS below before launching QuPath |
+| macOS | Not tested. JavaCPP's own library loader is used, which fails on Java 16+ unless QuPath is started with `--add-opens=java.base/java.lang=ALL-UNNAMED` (see below). |
 
 Why the flag: JavaCPP loads native libraries on behalf of classes from other class loaders by reflecting into
 `java.lang.Runtime`, which recent Java versions block. On Windows the extension works around this by loading and
@@ -53,6 +56,11 @@ To pass the flag, set the environment variable before starting QuPath:
 
 ```bat
 set JAVA_TOOL_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED
+```
+
+or in bash (for Linux):
+```bash
+export JAVA_TOOL_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED"
 ```
 
 or add a `java-options=--add-opens=java.base/java.lang=ALL-UNNAMED` line to the `[JavaOptions]` section of the
